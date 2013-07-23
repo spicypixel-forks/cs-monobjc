@@ -21,6 +21,7 @@
 // THE SOFTWARE.
 // 
 using System;
+using System.Runtime.InteropServices;
 using Monobjc.Types;
 using NUnit.Framework;
 
@@ -106,6 +107,58 @@ namespace Monobjc
             Assert.IsTrue(true);
         }
 
+		[Test]
+		public void TestByRefMessaging()
+		{
+			// Create a new instance of a test class, then use the
+			// wrapper to invoke it from Objective-C.
+			var testClass = new MessageTestByRef();
+			var testClassWrapper = new MessageTestByRefWrapper(testClass.NativePointer);
+
+			bool mp1_arg1 = false;
+			testClassWrapper.MethodParameter1(ref mp1_arg1);
+			Assert.IsTrue(mp1_arg1);
+
+			char mp2_arg1 = 'a';
+			short mp2_arg2 = -2;
+			int mp2_arg3 = -3;
+			long mp2_arg4 = -4;
+			int mp2_result = testClassWrapper.MethodParameter2(ref mp2_arg1, ref mp2_arg2, ref mp2_arg3, ref mp2_arg4);
+			Assert.AreEqual(0, mp2_result);
+			Assert.AreEqual('A', mp2_arg1);
+			Assert.AreEqual(-20, mp2_arg2);
+			Assert.AreEqual(-30, mp2_arg3);
+			Assert.AreEqual(-40, mp2_arg4);
+
+			byte mp3_arg1 = 1;
+			ushort mp3_arg2 = 2;
+			uint mp3_arg3 = 3;
+			ulong mp3_arg4 = 4;
+			testClassWrapper.MethodParameter3(ref mp3_arg1, ref mp3_arg2, ref mp3_arg3, ref mp3_arg4);
+			Assert.AreEqual(10, mp3_arg1);
+			Assert.AreEqual(20, mp3_arg2);
+			Assert.AreEqual(30, mp3_arg3);
+			Assert.AreEqual(40, mp3_arg4);
+
+			IntPtr mp4_arg1 = new IntPtr(10);
+			Class mp4_arg2 = Class.Get("NSObject");
+			Id mp4_arg3 = Class.Get("NSObject");
+			testClassWrapper.MethodParameter4(ref mp4_arg1, ref mp4_arg2, ref mp4_arg3);
+			Assert.AreEqual(100, mp4_arg1.ToInt32());
+			Assert.AreSame(Class.Get("NSString"), mp4_arg2);
+			Assert.AreSame(Class.Get("NSString"), mp4_arg3);
+
+			TSWindingRule mp5_arg1 = TSWindingRule.NSEvenOddWindingRule;
+			testClassWrapper.MethodParameter5(ref mp5_arg1);
+			Assert.AreEqual(TSWindingRule.NSNonZeroWindingRule, mp5_arg1);
+
+			float mp6_arg1 = 1.0f;
+			double mp6_arg2 = 2.0;
+			testClassWrapper.MethodParameter6(ref mp6_arg1, ref mp6_arg2);
+			Assert.AreEqual(10.0f, mp6_arg1);
+			Assert.AreEqual(20.0, mp6_arg2);
+		}
+
         /*
 		[Test]
 		public void TestMessagingException()
@@ -179,4 +232,237 @@ namespace Monobjc
             //throw new NotImplementedException("value=" + value);
         }
     }
+
+	[ObjectiveCClass("MessageTestByRef")]
+	public class MessageTestByRef : TSObject
+	{
+		public MessageTestByRef() {}
+
+		public MessageTestByRef(IntPtr value) : base(value) {}
+
+		[ObjectiveCMessage("methodParameter1")]
+		public void MethodParameter1(ref bool arg1) 
+		{
+			Assert.IsFalse(arg1);
+			arg1 = true;
+		}
+
+		[ObjectiveCMessage("methodParameter2")]
+		public int MethodParameter2(ref char arg1, ref short arg2, ref int arg3, ref long arg4)
+		{
+			Assert.AreEqual('a', arg1);
+			Assert.AreEqual(-2, arg2);
+			Assert.AreEqual(-3, arg3);
+			Assert.AreEqual(-4, arg4);
+			arg1 = 'A';
+			arg2 = -20;
+			arg3 = -30;
+			arg4 = -40;
+			return 0;
+		}
+
+		[ObjectiveCMessage("methodParameter3")]
+		public void MethodParameter3(ref byte arg1, ref ushort arg2, ref uint arg3, ref ulong arg4) 
+		{
+			Assert.AreEqual(1, arg1);
+			Assert.AreEqual(2, arg2);
+			Assert.AreEqual(3, arg3);
+			Assert.AreEqual(4, arg4);
+			arg1 = 10;
+			arg2 = 20;
+			arg3 = 30;
+			arg4 = 40;
+		}
+
+		[ObjectiveCMessage("methodParameter4")]
+		public int MethodParameter4(ref IntPtr arg1, ref Class arg2, ref Id arg3)
+		{
+			Assert.AreEqual(10, arg1.ToInt32());
+			Assert.AreSame(Class.Get("NSObject"), arg2);
+			Assert.AreSame(Class.Get("NSObject"), arg3);
+			arg1 = new IntPtr(100);
+			arg2 = Class.Get("NSString");
+			arg3 = Class.Get("NSString");
+			return 0;
+		}
+
+		[ObjectiveCMessage("methodParameter5")]
+		public int MethodParameter5(ref TSWindingRule arg1)
+		{
+			Assert.AreEqual(TSWindingRule.NSEvenOddWindingRule, arg1);
+			arg1 = TSWindingRule.NSNonZeroWindingRule;
+			return 0;
+		}
+
+		[ObjectiveCMessage("methodParameter6")]
+		public int MethodParameter6(ref float arg1, ref double arg2)
+		{
+			Assert.AreEqual(1.0f, arg1);
+			Assert.AreEqual(2.0, arg2);
+			arg1 = 10f;
+			arg2 = 20.0;
+			return 0;
+		}
+	}
+
+	public class MessageTestByRefWrapper
+	{
+		public MessageTestByRefWrapper() {}
+
+		public MessageTestByRefWrapper(IntPtr value) 
+		{
+			NativePointer = value;
+		}
+
+		public IntPtr NativePointer { get; private set; }
+
+		[ObjectiveCMessage("methodParameter1")]
+		public void MethodParameter1(ref bool arg1) 
+		{
+			IntPtr local1 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(bool)));
+
+			Marshal.WriteByte(local1, Convert.ToByte(arg1));
+
+			ObjectiveCRuntime.SendMessage(
+				NativePointer, "methodParameter1", 
+				local1);
+
+			arg1 = Convert.ToBoolean(Marshal.ReadByte(local1));
+
+			Marshal.FreeHGlobal(local1);
+		}
+
+		[ObjectiveCMessage("methodParameter2")]
+		public int MethodParameter2(ref char arg1, ref short arg2, ref int arg3, ref long arg4)
+		{
+			IntPtr local1 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(char)));
+			IntPtr local2 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(short)));
+			IntPtr local3 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(int)));
+			IntPtr local4 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(long)));
+
+			Marshal.WriteInt16(local1, arg1);
+			Marshal.WriteInt16(local2, arg2);
+			Marshal.WriteInt32(local3, arg3);
+			Marshal.WriteInt64(local4, arg4);
+
+			var result = ObjectiveCRuntime.SendMessage<int>(
+				NativePointer, "methodParameter2", 
+				local1,
+				local2,
+				local3,
+				local4);
+
+			arg1 = Convert.ToChar(Marshal.ReadInt16(local1));
+			arg2 = Marshal.ReadInt16(local2);
+			arg3 = Marshal.ReadInt32(local3);
+			arg4 = Marshal.ReadInt64(local4);
+
+			Marshal.FreeHGlobal(local1);
+			Marshal.FreeHGlobal(local2);
+			Marshal.FreeHGlobal(local3);
+			Marshal.FreeHGlobal(local4);
+
+			return result;
+		}
+
+		[ObjectiveCMessage("methodParameter3")]
+		public void MethodParameter3(ref byte arg1, ref ushort arg2, ref uint arg3, ref ulong arg4) 
+		{
+			IntPtr local1 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(byte)));
+			IntPtr local2 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(ushort)));
+			IntPtr local3 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(uint)));
+			IntPtr local4 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(ulong)));
+
+			Marshal.WriteByte(local1, arg1);
+			Marshal.WriteInt16(local2, Convert.ToInt16(arg2));
+			Marshal.WriteInt32(local3, (int)arg3);
+			Marshal.WriteInt64(local4, (long)arg4);
+
+			ObjectiveCRuntime.SendMessage(
+				NativePointer, "methodParameter3", 
+				local1,
+				local2,
+				local3,
+				local4);
+
+			arg1 = Marshal.ReadByte(local1);
+			arg2 = (ushort)Marshal.ReadInt16(local2);
+			arg3 = (uint)Marshal.ReadInt32(local3);
+			arg4 = (ulong)Marshal.ReadInt64(local4);
+
+			Marshal.FreeHGlobal(local1);
+			Marshal.FreeHGlobal(local2);
+			Marshal.FreeHGlobal(local3);
+			Marshal.FreeHGlobal(local4);
+		}
+
+		[ObjectiveCMessage("methodParameter4")]
+		public int MethodParameter4(ref IntPtr arg1, ref Class arg2, ref Id arg3)
+		{
+			IntPtr local1 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(IntPtr)));
+			IntPtr local2 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(IntPtr)));
+			IntPtr local3 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(IntPtr)));
+
+			Marshal.WriteIntPtr(local1, arg1);
+			Marshal.WriteIntPtr(local2, arg2.NativePointer);
+			Marshal.WriteIntPtr(local3, arg3.NativePointer);
+
+			var result = ObjectiveCRuntime.SendMessage<int>(
+				NativePointer, "methodParameter4", 
+				local1,
+				local2,
+				local3);
+
+			arg1 = Marshal.ReadIntPtr(local1);
+			arg2 = ObjectiveCRuntime.GetInstance<Class>(Marshal.ReadIntPtr(local2));
+			arg3 = ObjectiveCRuntime.GetInstance<Id>(Marshal.ReadIntPtr(local3));
+
+			Marshal.FreeHGlobal(local1);
+			Marshal.FreeHGlobal(local2);
+			Marshal.FreeHGlobal(local3);
+
+			return result;
+		}
+
+		[ObjectiveCMessage("methodParameter5")]
+		public int MethodParameter5(ref TSWindingRule arg1)
+		{
+			IntPtr local1 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(Int32)));
+
+			Marshal.WriteInt32(local1, (Int32)arg1);
+
+			var result = ObjectiveCRuntime.SendMessage<int>(
+				NativePointer, "methodParameter5", 
+				local1);
+
+			arg1 = (TSWindingRule)Marshal.ReadInt32(local1);
+
+			Marshal.FreeHGlobal(local1);
+
+			return result;
+		}
+
+		[ObjectiveCMessage("methodParameter6")]
+		public int MethodParameter6(ref float arg1, ref double arg2)
+		{
+			IntPtr local1 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(float)));
+			IntPtr local2 = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(double)));
+
+			Marshal.StructureToPtr(arg1, local1, false);
+			Marshal.StructureToPtr(arg2, local2, false);
+
+			var result = ObjectiveCRuntime.SendMessage<int>(
+				NativePointer, "methodParameter6", 
+				local1,
+				local2);
+
+			arg1 = (float)Marshal.PtrToStructure(local1, typeof(float));
+			arg2 = (double)Marshal.PtrToStructure(local2, typeof(double));
+
+			Marshal.FreeHGlobal(local1);
+			Marshal.FreeHGlobal(local2);
+
+			return result;
+		}
+	}
 }
